@@ -1,29 +1,24 @@
 """
-LLM Client - Vision-capable LLM integration.
+LLM Client - Using Ollama CLI (more reliable than API).
 
-Supports Qwen VL (via Ollama or DashScope), OpenAI GPT-4V, Anthropic Claude, etc.
+Supports vision models (qwen2.5-vl) and text models (qwen3.5, llama, etc.)
 """
 
 import base64
 import json
+import subprocess
 from pathlib import Path
 from typing import Optional
 
-import requests
-
 
 class LLMClient:
-    """Vision-capable LLM client."""
+    """LLM client using Ollama CLI."""
 
     def __init__(
         self,
-        base_url: str = "http://localhost:11434",
-        model: str = "qwen2.5-vl:7b",
-        api_key: Optional[str] = None,
+        model: str = "qwen3.5:9b",
     ):
-        self.base_url = base_url.rstrip("/")
         self.model = model
-        self.api_key = api_key
 
     def chat(
         self,
@@ -32,205 +27,72 @@ class LLMClient:
         system_prompt: Optional[str] = None,
     ) -> str:
         """
-        Send chat request with optional image.
-        
-        Returns the model's response text.
+        Send chat request using ollama CLI.
         """
-        if "ollama" in self.base_url:
-            return self._chat_ollama(prompt, image_path, system_prompt)
-        elif "dashscope" in self.base_url:
-            return self._chat_qwen(prompt, image_path, system_prompt)
-        elif "openai" in self.base_url:
-            return self._chat_openai(prompt, image_path, system_prompt)
-        elif "anthropic" in self.base_url:
-            return self._chat_anthropic(prompt, image_path, system_prompt)
+        # Build the prompt
+        full_prompt = prompt
+        if system_prompt:
+            full_prompt = f"{system_prompt}\n\n{prompt}"
+
+        # Check if vision model
+        if "vl" in self.model.lower() and image_path:
+            return self._chat_vision(full_prompt, image_path)
         else:
-            raise ValueError(f"Unknown LLM provider: {self.base_url}")
+            return self._chat_text(full_prompt)
 
-    def _chat_ollama(
-        self,
-        prompt: str,
-        image_path: Optional[str] = None,
-        system_prompt: Optional[str] = None,
-    ) -> str:
-        """Chat with Ollama (Qwen VL)."""
-        url = f"{self.base_url}/api/chat"
-        
-        messages = []
-        
-        if system_prompt:
-            messages.append({"role": "system", "content": system_prompt})
-        
-        # Build message with image
-        content = []
-        if image_path:
-            # Read and encode image
-            with open(image_path, "rb") as f:
-                img_b64 = base64.b64encode(f.read()).decode("utf-8")
-            content.append({
-                "type": "image_url",
-                "image_url": {
-                    "url": f"data:image/png;base64,{img_b64}"
-                }
-            })
-        
-        content.append({"type": "text", "text": prompt})
-        messages.append({"role": "user", "content": content})
-        
-        payload = {
-            "model": self.model,
-            "messages": messages,
-            "stream": False,
-        }
-        
-        resp = requests.post(url, json=payload, timeout=120)
-        resp.raise_for_status()
-        
-        result = resp.json()
-        return result.get("message", {}).get("content", "")
+    def _chat_text(self, prompt: str) -> str:
+        """Chat using text model via CLI."""
+        try:
+            # Use echo to pipe prompt to ollama
+            result = subprocess.run(
+                ["ollama", "run", self.model],
+                input=prompt,
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+            
+            if result.returncode != 0:
+                return f"Error: {result.stderr}"
+            
+            # Filter out ANSI codes
+            output = result.stdout
+            # Remove ANSI escape sequences
+            import re
+            output = re.sub(r'\x1b\[[0-9;]*[a-zA-Z]', '', output)
+            return output.strip()
+            
+        except subprocess.TimeoutExpired:
+            return "Error: Timeout"
+        except Exception as e:
+            return f"Error: {str(e)}"
 
-    def _chat_qwen(
-        self,
-        prompt: str,
-        image_path: Optional[str] = None,
-        system_prompt: Optional[str] = None,
-    ) -> str:
-        """Chat with Qwen VL via DashScope cloud API."""
-        url = f"{self.base_url}/chat/completions"
+    def _chat_vision(self, prompt: str, image_path: str) -> str:
+        """Chat using vision model with image."""
+        # For vision models, we need to describe the image
+        # Note: qwen2.5-vl via CLI expects image path as argument
+        cmd = ["ollama", "run", self.model, f"Image: {image_path}", prompt]
         
-        headers = {
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {self.api_key}",
-        }
-        
-        # Build message with image
-        content = []
-        if image_path:
-            with open(image_path, "rb") as f:
-                img_b64 = base64.b64encode(f.read()).decode("utf-8")
-            content.append({
-                "type": "image_url",
-                "image_url": {
-                    "url": f"data:image/png;base64,{img_b64}"
-                }
-            })
-        
-        content.append({"type": "text", "text": prompt})
-        
-        messages = []
-        if system_prompt:
-            messages.append({"role": "system", "content": system_prompt})
-        messages.append({"role": "user", "content": content})
-        
-        payload = {
-            "model": self.model,
-            "messages": messages,
-            "max_tokens": 512,
-        }
-        
-        resp = requests.post(url, headers=headers, json=payload, timeout=120)
-        resp.raise_for_status()
-        
-        result = resp.json()
-        return result["choices"][0]["message"]["content"]
-
-    def _chat_openai(
-        self,
-        prompt: str,
-        image_path: Optional[str] = None,
-        system_prompt: Optional[str] = None,
-    ) -> str:
-        """Chat with OpenAI GPT-4V."""
-        url = f"{self.base_url}/v1/chat/completions"
-        
-        headers = {
-            "Content-Type": "application/json",
-        }
-        if self.api_key:
-            headers["Authorization"] = f"Bearer {self.api_key}"
-        
-        messages = []
-        if system_prompt:
-            messages.append({"role": "system", "content": system_prompt})
-        
-        # Build message with image
-        content = []
-        if image_path:
-            with open(image_path, "rb") as f:
-                img_b64 = base64.b64encode(f.read()).decode("utf-8")
-            content.append({
-                "type": "image_url",
-                "image_url": {
-                    "url": f"data:image/png;base64,{img_b64}"
-                }
-            })
-        
-        content.append({"type": "text", "text": prompt})
-        messages.append({"role": "user", "content": content})
-        
-        payload = {
-            "model": self.model,
-            "messages": messages,
-            "max_tokens": 512,
-        }
-        
-        resp = requests.post(url, headers=headers, json=payload, timeout=120)
-        resp.raise_for_status()
-        
-        result = resp.json()
-        return result["choices"][0]["message"]["content"]
-
-    def _chat_anthropic(
-        self,
-        prompt: str,
-        image_path: Optional[str] = None,
-        system_prompt: Optional[str] = None,
-    ) -> str:
-        """Chat with Anthropic Claude."""
-        url = f"{self.base_url}/v1/messages"
-        
-        headers = {
-            "Content-Type": "application/json",
-            "x-api-key": self.api_key or "",
-            "anthropic-version": "2023-06-01",
-        }
-        
-        # Build content
-        content = []
-        if image_path:
-            with open(image_path, "rb") as f:
-                img_b64 = base64.b64encode(f.read()).decode("utf-8")
-            content.append({
-                "type": "image",
-                "source": {
-                    "type": "base64",
-                    "media_type": "image/png",
-                    "data": img_b64
-                }
-            })
-        
-        content.append({
-            "type": "text",
-            "text": prompt
-        })
-        
-        payload = {
-            "model": self.model,
-            "max_tokens": 512,
-            "messages": [{
-                "role": "user",
-                "content": content
-            }]
-        }
-        
-        if system_prompt:
-            payload["system"] = system_prompt
-        
-        resp = requests.post(url, headers=headers, json=payload, timeout=120)
-        resp.raise_for_status()
-        
-        result = resp.json()
-        return result["content"][0]["text"]
+        try:
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+            
+            if result.returncode != 0:
+                return f"Error: {result.stderr}"
+            
+            import re
+            output = result.stdout
+            output = re.sub(r'\x1b\[[0-9;]*[a-zA-Z]', '', output)
+            return output.strip()
+            
+        except subprocess.TimeoutExpired:
+            return "Error: Timeout"
+        except Exception as e:
+            return f"Error: {str(e)}"
 
 
 # ------------------------------------------------------------------
@@ -243,31 +105,5 @@ def create_llm_client(
     api_key: Optional[str] = None,
     **kwargs,
 ) -> LLMClient:
-    """Create LLM client based on provider."""
-    
-    configs = {
-        "ollama": {
-            "base_url": "http://localhost:11434",
-            "model": model or "qwen2.5-vl:7b",
-        },
-        "qwen": {
-            "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
-            "model": model or "qwen-vl-max",
-            "api_key": api_key,
-        },
-        "openai": {
-            "base_url": "https://api.openai.com/v1",
-            "model": model or "gpt-4o",
-            "api_key": api_key,
-        },
-        "anthropic": {
-            "base_url": "https://api.anthropic.com",
-            "model": model or "claude-3-5-sonnet-20241022",
-            "api_key": api_key,
-        },
-    }
-    
-    config = configs.get(provider, configs["ollama"])
-    config.update(kwargs)
-    
-    return LLMClient(**config)
+    """Create LLM client."""
+    return LLMClient(model=model or "qwen3.5:9b")
