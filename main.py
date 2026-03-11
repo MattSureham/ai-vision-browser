@@ -234,8 +234,9 @@ def cmd_interactive(args, browser: BrowserAgent, llm):
 def main():
     parser = argparse.ArgumentParser(description="AI Vision Browser")
     parser.add_argument("--port", type=int, default=9222, help="CDP port")
-    parser.add_argument("--llm", default="ollama", choices=["ollama", "openai", "anthropic"], help="LLM provider")
+    parser.add_argument("--llm", default="ollama", choices=["ollama", "qwen", "openai", "anthropic"], help="LLM provider")
     parser.add_argument("--model", help="LLM model name")
+    parser.add_argument("--api-key", help="API key for cloud LLM providers (Qwen, OpenAI, Anthropic)")
     
     subparsers = parser.add_subparsers(dest="command", help="Commands")
     
@@ -275,7 +276,7 @@ def main():
     browser = BrowserAgent(port=args.port)
     
     # Initialize LLM
-    llm = create_llm_client(provider=args.llm, model=args.model)
+    llm = create_llm_client(provider=args.llm, model=args.model, api_key=args.api_key)
     
     # Execute command
     try:

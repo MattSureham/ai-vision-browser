@@ -1,7 +1,7 @@
 """
 LLM Client - Vision-capable LLM integration.
 
-Supports Qwen VL (via Ollama), OpenAI GPT-4V, Anthropic Claude, etc.
+Supports Qwen VL (via Ollama or DashScope), OpenAI GPT-4V, Anthropic Claude, etc.
 """
 
 import base64
@@ -38,6 +38,8 @@ class LLMClient:
         """
         if "ollama" in self.base_url:
             return self._chat_ollama(prompt, image_path, system_prompt)
+        elif "dashscope" in self.base_url:
+            return self._chat_qwen(prompt, image_path, system_prompt)
         elif "openai" in self.base_url:
             return self._chat_openai(prompt, image_path, system_prompt)
         elif "anthropic" in self.base_url:
@@ -86,6 +88,51 @@ class LLMClient:
         
         result = resp.json()
         return result.get("message", {}).get("content", "")
+
+    def _chat_qwen(
+        self,
+        prompt: str,
+        image_path: Optional[str] = None,
+        system_prompt: Optional[str] = None,
+    ) -> str:
+        """Chat with Qwen VL via DashScope cloud API."""
+        url = f"{self.base_url}/chat/completions"
+        
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {self.api_key}",
+        }
+        
+        # Build message with image
+        content = []
+        if image_path:
+            with open(image_path, "rb") as f:
+                img_b64 = base64.b64encode(f.read()).decode("utf-8")
+            content.append({
+                "type": "image_url",
+                "image_url": {
+                    "url": f"data:image/png;base64,{img_b64}"
+                }
+            })
+        
+        content.append({"type": "text", "text": prompt})
+        
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": content})
+        
+        payload = {
+            "model": self.model,
+            "messages": messages,
+            "max_tokens": 512,
+        }
+        
+        resp = requests.post(url, headers=headers, json=payload, timeout=120)
+        resp.raise_for_status()
+        
+        result = resp.json()
+        return result["choices"][0]["message"]["content"]
 
     def _chat_openai(
         self,
@@ -193,6 +240,7 @@ class LLMClient:
 def create_llm_client(
     provider: str = "ollama",
     model: Optional[str] = None,
+    api_key: Optional[str] = None,
     **kwargs,
 ) -> LLMClient:
     """Create LLM client based on provider."""
@@ -202,13 +250,20 @@ def create_llm_client(
             "base_url": "http://localhost:11434",
             "model": model or "qwen2.5-vl:7b",
         },
+        "qwen": {
+            "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+            "model": model or "qwen-vl-max",
+            "api_key": api_key,
+        },
         "openai": {
             "base_url": "https://api.openai.com/v1",
             "model": model or "gpt-4o",
+            "api_key": api_key,
         },
         "anthropic": {
             "base_url": "https://api.anthropic.com",
             "model": model or "claude-3-5-sonnet-20241022",
+            "api_key": api_key,
         },
     }
     
