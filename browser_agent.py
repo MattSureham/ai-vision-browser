@@ -356,6 +356,7 @@ class BrowserAgent:
             "type": "mouseWheel",
             "x": x,
             "y": y,
+            "deltaX": 0,
             "deltaY": delta_y,
         })
         print(f"[browser_agent] Scrolled {direction}")
