@@ -459,7 +459,7 @@ class BrowserAgent:
         time.sleep(seconds)
 
 
-def ensure_chrome(port: int = DEFAULT_PORT, headless: bool = False):
+def ensure_chrome(port: int = DEFAULT_PORT, headless: bool = False, user_data_dir: str = None):
     """Ensure Chrome is running with remote debugging."""
     import subprocess
     
@@ -472,6 +472,10 @@ def ensure_chrome(port: int = DEFAULT_PORT, headless: bool = False):
     except Exception:
         pass
     
+    # Default user data dir
+    if user_data_dir is None:
+        user_data_dir = "/tmp/chrome-debug"
+    
     # Launch Chrome
     if os.path.exists("/Applications/Google Chrome.app"):
         cmd = [
@@ -480,6 +484,7 @@ def ensure_chrome(port: int = DEFAULT_PORT, headless: bool = False):
             "--no-first-run",
             "--no-default-browser-check",
             "--disable-popup-blocking",
+            f"--user-data-dir={user_data_dir}",
         ]
         if headless:
             cmd.append("--headless=new")
@@ -496,6 +501,7 @@ def ensure_chrome(port: int = DEFAULT_PORT, headless: bool = False):
             f"--remote-debugging-port={port}",
             "--no-first-run",
             "--no-default-browser-check",
+            f"--user-data-dir={user_data_dir}",
         ]
         if headless:
             cmd.append("--headless=new")
