@@ -6,7 +6,7 @@ AI-first browser automation using vision-capable LLM + CDP (Chrome DevTools Prot
 
 ```
 ┌─────────────┐    ┌───────────────┐    ┌─────────────┐
-│  Screenshot │───▶│  Qwen VL      │───▶│  Action     │
+│  Screenshot │───▶│  Vision LLM  │───▶│  Action     │
 │  of page    │    │  "Click 发布" │    │  click@x,y │
 └─────────────┘    └───────────────┘    └─────────────┘
                            │
@@ -20,8 +20,8 @@ AI-first browser automation using vision-capable LLM + CDP (Chrome DevTools Prot
 ## Requirements
 
 - Python 3.9+
-- Chrome/Chromium
-- Qwen VL model (or any vision LLM with API)
+- Chrome/Chromium with remote debugging enabled
+- At least one LLM provider (Ollama, OpenAI, Anthropic, Kimi, or Minimax)
 
 ## Installation
 
@@ -29,23 +29,51 @@ AI-first browser automation using vision-capable LLM + CDP (Chrome DevTools Prot
 pip install -r requirements.txt
 ```
 
+## Supported LLM Providers
+
+| Provider | Vision Models | API Key Required |
+|----------|---------------|------------------|
+| Ollama | qwen2.5-vl, llava | No (local) |
+| OpenAI | gpt-4o, gpt-4-vision | Yes |
+| Anthropic | claude-3-5-sonnet | Yes |
+| Kimi (Moonshot) | moonshot-v1-8k-vision | Yes |
+| Minimax | MiniMax-M2.5 | Yes |
+
 ## Usage
 
 ### 1. Start Chrome with remote debugging
 
 ```bash
-google-chrome --remote-debugging-port=9222
-# or on Mac
+# Mac
 "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --remote-debugging-port=9222
+
+# Linux
+google-chrome --remote-debugging-port=9222
 ```
 
-### 2. Run a command
+### 2. Run commands
 
 ```bash
+# Navigate to a URL
 python main.py navigate "https://www.xiaohongshu.com"
+
+# Click an element by description
 python main.py click "the upload button"
+
+# Type text into a field
 python main.py type "the title input" "My Video Title"
+
+# Take screenshot
 python main.py screenshot
+
+# Scroll
+python main.py scroll down
+python main.py scroll up
+
+# Refresh / Go back / Go forward
+python main.py refresh
+python main.py back
+python main.py forward
 ```
 
 ### 3. Interactive mode
@@ -59,14 +87,37 @@ Then type commands like:
 - `type the title field "Hello World"`
 - `scroll down`
 - `screenshot`
+- `refresh`
+- `back`
+- `forward`
+- `quit`
+
+### 4. Using different LLM providers
+
+```bash
+# Ollama (local, default)
+python main.py --llm ollama --model qwen2.5-vl:7b click "the button"
+
+# OpenAI
+python main.py --llm openai --model gpt-4o --api-key sk-xxx click "the button"
+
+# Anthropic
+python main.py --llm anthropic --model claude-3-5-sonnet-20241022 --api-key sk-ant-xxx click "the button"
+
+# Kimi (Moonshot AI)
+python main.py --llm kimi --model k2p5 --api-key your-kimi-api-key click "the button"
+
+# Minimax
+python main.py --llm minimax --model MiniMax-M2.5 --api-key your-minimax-key click "the button"
+```
 
 ## Architecture
 
 ```
 ai-vision-browser/
-├── browser_agent.py      # CDP wrapper (screenshot, click, type)
+├── browser_agent.py      # CDP wrapper (screenshot, click, type, navigate)
 ├── vision_prompt.py      # Prompt templates for LLM
-├── llm_client.py         # LLM API client (Qwen VL)
+├── llm_client.py         # Multi-provider LLM client
 ├── main.py               # CLI entry point
 └── requirements.txt      # Python dependencies
 ```
@@ -80,22 +131,27 @@ ai-vision-browser/
 | `type` | `type the search box "query"` |
 | `screenshot` | `screenshot` |
 | `scroll` | `scroll down` / `scroll up` |
-| `wait` | `wait 2 seconds` |
+| `refresh` | `refresh` |
+| `back` | `back` |
+| `forward` | `forward` |
 
-## LLM Configuration
+## API Keys
 
-Default: Qwen VL via Ollama (`http://localhost:11434`)
+Set via `--api-key` flag or environment variable:
 
-To use other LLMs, edit `llm_client.py`:
+```bash
+export OPENAI_API_KEY=sk-xxx
+export ANTHROPIC_API_KEY=sk-ant-xxx
+export KIMI_API_KEY=your-kimi-key
+export MINIMAX_API_KEY=your-minimax-key
+```
 
-```python
-# OpenAI GPT-4V
-BASE_URL = "https://api.openai.com/v1"
-MODEL = "gpt-4-vision-preview"
+## Retry Logic
 
-# Anthropic Claude
-BASE_URL = "https://api.anthropic.com/v1"
-MODEL = "claude-3-opus-20240229"
+Failed actions automatically retry (default: 3 retries). Configure with `--retries`:
+
+```bash
+python main.py --retries 5 click "the submit button"
 ```
 
 ## Why This Approach
